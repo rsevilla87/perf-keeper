@@ -89,11 +89,12 @@ def create_agent() -> StateGraph:
         response = llm.invoke(messages)
         out: dict = {"messages": [response]}
         if isinstance(response, AIMessage) and getattr(response, "tool_calls", None):
-            logger.info("Classifier requested tools; deferring failed_test_type until next turn.")
             return out
         failed_test_type = response.content[0]['text'] if isinstance(response.content, list) else response.content
         logger.info("Failed test type: %r", failed_test_type)
         out["failed_test_type"] = failed_test_type
+        if "ocp_version" in response.content if isinstance(response.content, dict) else None:
+            out["ocp_version"] = response.content["ocp_version"]
         return out
 
     async def run_analysis(state: AgentState) -> dict:
@@ -135,6 +136,12 @@ def create_agent() -> StateGraph:
             out["regressing_version"] = content.split("Regressing version: ")[1].split("\n")[0]
             out["previous_version"] = content.split("Previous version: ")[1].split("\n")[0]
             logger.info("Versions: %s → %s", out["previous_version"], out["regressing_version"])
+        if "ocp_version:" in content.lower():
+            for line in content.splitlines():
+                if line.lower().startswith("ocp_version:"):
+                    out["ocp_version"] = line.split(":", 1)[1].strip().strip("`")
+                    logger.info("OCP version: %s", out["ocp_version"])
+                    break
         return out
 
     def tools_required(state: AgentState) -> str:
@@ -165,8 +172,9 @@ def create_agent() -> StateGraph:
         logger.info("Analysis Node: final_report")
         with open(f"{SKILLS_DIR}/final-report.md", "r") as f:
             fmt_vars = {
-                "regressing_version": "N/A",
-                "previous_version": "N/A",
+                "regressing_version": "unknown",
+                "previous_version": "unknown",
+                "ocp_version": "unknown",
                 **state,
             }
             system_prompt = f.read().format(**fmt_vars)

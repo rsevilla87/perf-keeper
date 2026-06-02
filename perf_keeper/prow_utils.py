@@ -25,11 +25,14 @@ def extract_job_info(state: AgentState) -> dict:
                 job_name,
                 build_id,
             )
-            get_job_state(job_name, build_id)
-            return {
+            job_state = get_job_state(job_name, build_id)
+            result = {
                 "job_name": job_name,
                 "build_id": build_id,
             }
+            if isinstance(job_state, dict):
+                result.update(job_state)
+            return result
         else:
             logger.warning("extract_job_info: no /logs/{job}/{build}/ pattern in URL: %s", job_url)
             return {
@@ -50,7 +53,7 @@ def get_job_state(job_name: str, build_id: str) -> bool:
         resp = httpx.get(url)
         resp.raise_for_status()
         json_data = resp.json()
-        logger.info(f"set_job_state: job passed: {json_data.get('passed')}")
+        logger.info(f"get_job_state: job passed: {json_data.get('passed')}")
         return {
             "passed": json_data.get("passed"),
         }
@@ -75,7 +78,7 @@ def get_failed_test_info(state: AgentState) -> dict:
     # {"level":"error","msg":"\n  * could not run steps: step {step} failed: \"{step}\" test steps failed: \"{step}\" pod \"{step}-{test}\" failed: could not watch pod
     resp.raise_for_status()
     for line in resp.text.splitlines():
-        if "test steps failed:" in line:
+        if "could not run steps:" in line:
             step_name = re.search(r"could not run steps: step ([\w-]+)", line).group(1)
             pod_pattern = rf'pod \\?"{re.escape(step_name)}-([\w-]+)\\?"'
             test_name = re.search(pod_pattern, line).group(1)

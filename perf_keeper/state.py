@@ -27,3 +27,5 @@ class AgentState(TypedDict):
     # Regressing version and previous version
     regressing_version: NotRequired[str]
     previous_version: NotRequired[str]
+    # OCP version
+    ocp_version: NotRequired[str]

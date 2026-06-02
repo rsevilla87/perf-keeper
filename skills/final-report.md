@@ -21,8 +21,11 @@ In case the job failed because of a regression, produce a table with the followi
 | `metric_name` | `value` | `percentage_change` | `regressing_test` |
 ```
 
+Also include the following information if available:
+
 - Job URL: {job_url}
 - Failed test: {failed_test}
+- OCP version: {ocp_version}
 - Regressing version: {regressing_version}
 - Previous version: {previous_version}
 
