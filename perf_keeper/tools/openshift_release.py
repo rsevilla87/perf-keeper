@@ -4,7 +4,6 @@ from __future__ import annotations
 import base64
 import html
 import logging
-import os
 import re
 import subprocess
 from urllib.parse import parse_qs, unquote, urlencode, urlparse
@@ -12,16 +11,9 @@ from urllib.parse import parse_qs, unquote, urlencode, urlparse
 import httpx
 from langchain_core.tools import tool
 
-logger = logging.getLogger(__name__)
+from perf_keeper.config import get_config
 
-_OCP_RELEASE_API_URL = os.getenv(
-    "OCP_RELEASE_API_URL",
-    "https://amd64.ocp.releases.ci.openshift.org/api/v1",
-)
-_SIPPY_BASE_URL = os.getenv(
-    "SIPPY_BASE_URL",
-    "https://sippy.dptools.openshift.org/api",
-)
+logger = logging.getLogger(__name__)
 
 
 def _get_json(url: str) -> dict:
@@ -32,7 +24,7 @@ def _get_json(url: str) -> dict:
 
 
 def _fetch_rhcos_rpms(stream: str, version: str) -> list[dict]:
-    payload = _get_json(f"{_OCP_RELEASE_API_URL}/releasestream/{stream}/release/{version}")
+    payload = _get_json(f"{get_config().ocp_release_api_url}/releasestream/{stream}/release/{version}")
     version_url = None
     if "changeLogJson" in payload and "components" in payload["changeLogJson"]:
         for component in payload["changeLogJson"]["components"]:
@@ -75,7 +67,7 @@ def compare_releases(payload1: str, payload2: str) -> str:
     """
     try:
         q = urlencode({"fromPayload": payload2, "toPayload": payload1})
-        diff = _get_json(f"{_SIPPY_BASE_URL}/payloads/diff?{q}")
+        diff = _get_json(f"{get_config().sippy_base_url}/payloads/diff?{q}")
         if not isinstance(diff, list):
             return f"Unexpected response type: {type(diff).__name__}"
         if not diff:
@@ -177,6 +169,6 @@ def get_component_rpms(payload: str, component: str) -> str:
             return "\n".join(lines)
         logger.warning("No RPMs found in component image.")
     except subprocess.CalledProcessError as e:
-        logger.Error(f"Error getting component RPMs: {e.stderr or e}")
+        logger.error(f"Error getting component RPMs: {e.stderr or e}")
     except Exception as e:
         logger.error(f"Error getting component RPMs: {e}")

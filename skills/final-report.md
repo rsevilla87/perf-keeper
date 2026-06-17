@@ -10,6 +10,7 @@
 Produce **one** final report in the exact structure below. Use Markdown headings as shown. Be concise but specific: quote numbers, thresholds, alert names, exit codes, and PR titles **only** when they appear in the conversation.
 
 ## Required output structure
+Omit the sections that dont' contain any information.
 
 ## Job summary
 
@@ -21,13 +22,12 @@ In case the job failed because of a regression, produce a table with the followi
 | `metric_name` | `value` | `percentage_change` | `regressing_test` |
 ```
 
-Also include the following information if available:
+Also include the following information, don't include it if it's not available:
 
-- Job URL: {job_url}
-- Failed test: {failed_test}
-- OCP version: {ocp_version}
-- Regressing version: {regressing_version}
-- Previous version: {previous_version}
+- Job URL: `{job_url}`
+- Failed test: `{failed_test}`
+- Regressing version: `{regressing_version}`
+- Previous version: `{previous_version}`
 
 ## Root cause
 
@@ -47,7 +47,9 @@ Pick **exactly one** label (use this exact token on the line after the heading):
 - `test-error`
 - `alerting-violation`
 - `measurement-threshold`
-- `installation-failure`
+- `OpenShift installation failure`
+- `Day-2 operations failure`
+- `platform issue`
 - `workload timeout`
 - `job timeout`
 - `configuration-error`

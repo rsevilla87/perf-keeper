@@ -3,14 +3,15 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import asyncio
-import uvicorn
+from datetime import datetime, timezone
+from pathlib import Path
 
-from dotenv import load_dotenv
+import uvicorn
 from langchain_core.messages import AIMessage, BaseMessage
 from urllib.parse import urlparse
 
+from perf_keeper.config import load_config, get_config
 from perf_keeper.agent import create_agent
 from perf_keeper.server import app
 
@@ -74,10 +75,11 @@ async def run_non_interactive(job_url: str, *, print_token_usage: bool = False):
         _print_token_totals(result)
 
 def main():
-    load_dotenv()
     parser = argparse.ArgumentParser(description="OpenShift Perf & Scale Diagnosis Agent",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--prow-job-url", type=str, help="Prow job URL to diagnose (required)")
+    parser.add_argument("--config", type=str, default="config.yaml",
+                        help="Path to the YAML configuration file")
+    parser.add_argument("--prow-job-url", type=str, help="Prow job URL to diagnose")
     parser.add_argument(
         "--print-token-usage",
         action="store_true",
@@ -94,11 +96,22 @@ def main():
         default=8080,
         help="Server mode port (only used with --server)",
     )
-    args = parser.parse_args()
-    logging.basicConfig(
-        level=getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper()),
-        format="%(levelname)s %(name)s: %(message)s",
+    parser.add_argument(
+        "--watch",
+        action="store_true",
+        help="Daemon mode: poll Prow for failed jobs matching job_names in the config file",
     )
+    parser.add_argument(
+        "--since",
+        type=str,
+        default=None,
+        help="Only analyze jobs completed after this date (ISO format, e.g. 2026-06-01). Defaults to now",
+    )
+    args = parser.parse_args()
+
+    cfg = load_config(args.config)
+    log_level = getattr(logging, cfg.log_level.upper())
+    logging.basicConfig(level=log_level, format="%(levelname)s %(name)s: %(message)s")
     for noisy in (
         "httpcore",
         "google_genai",
@@ -110,10 +123,27 @@ def main():
         "httpx",
     ):
         logging.getLogger(noisy).setLevel(logging.WARNING)
-    # Ensure our package logger honors the requested level.
-    logging.getLogger("perf_keeper").setLevel(getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper()))
+    logging.getLogger("perf_keeper").setLevel(log_level)
+
     if args.server:
-        uvicorn.run(app, host="0.0.0.0", port=args.port, log_level=os.environ.get("LOG_LEVEL", "INFO").lower())
+        uvicorn.run(app, host="0.0.0.0", port=args.port, log_level=cfg.log_level.lower())
+        return
+    if args.watch:
+        from perf_keeper.watcher import ProwWatcher
+
+        if not cfg.job_names:
+            parser.error("Config file must contain a non-empty 'job_names' list for --watch mode")
+        if args.since:
+            since = datetime.fromisoformat(args.since).replace(tzinfo=timezone.utc)
+        else:
+            since = datetime.now(timezone.utc)
+        watcher = ProwWatcher(
+            job_patterns=cfg.job_names,
+            since=since,
+            poll_interval=cfg.poll_interval,
+            output_dir=Path(cfg.output_dir),
+        )
+        asyncio.run(watcher.run())
         return
     if args.prow_job_url:
         try:
@@ -121,7 +151,7 @@ def main():
         except ValueError:
             parser.error("Invalid Prow job URL")
     else:
-        parser.error("--prow-job-url is required (or use --server for REST API mode)")
+        parser.error("--prow-job-url is required (or use --server or --watch mode)")
     asyncio.run(
         run_non_interactive(args.prow_job_url, print_token_usage=args.print_token_usage)
     )

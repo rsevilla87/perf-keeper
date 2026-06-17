@@ -1,6 +1,5 @@
 import logging
-import os
-from dotenv import load_dotenv
+import re
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
@@ -12,8 +11,13 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
+from perf_keeper.config import get_config
 from perf_keeper.tools.artifact import fetch_artifact
-from perf_keeper.tools.github_pr import fetch_github_pull_request
+from perf_keeper.tools.github_pr import (
+    fetch_commit_files,
+    fetch_github_pull_request,
+    fetch_pr_commits,
+)
 from perf_keeper.tools.openshift_release import (
     compare_releases,
     compare_rhcos_rpms,
@@ -22,9 +26,9 @@ from perf_keeper.tools.openshift_release import (
 from perf_keeper.prow_utils import extract_job_info, passed_condition, get_failed_test_info
 from perf_keeper.state import AgentState
 
-load_dotenv()
-
 logger = logging.getLogger(__name__)
+
+SKILLS_DIR = "skills"
 
 
 def _usage_from_ai_message(msg: BaseMessage) -> tuple[int, int]:
@@ -42,50 +46,73 @@ def _usage_from_ai_message(msg: BaseMessage) -> tuple[int, int]:
         return (0, 0)
 
 
+def _text_from_response_content(content: object) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text":
+                parts.append(str(block.get("text", "")))
+        return "\n".join(parts)
+    return str(content)
+
+
+def _extract_labeled_value(content: str, label: str) -> str | None:
+    """Extract value from a 'Label: value' line; tolerates spacing and backticks."""
+    pattern = re.compile(rf"(?im)^\s*{re.escape(label)}\s*:\s*(.+?)\s*$")
+    match = pattern.search(content)
+    if not match:
+        return None
+    value = match.group(1).strip().strip("`\"'")
+    return value or None
+
+
 TOOLS = [
     fetch_artifact,
     fetch_github_pull_request,
+    fetch_pr_commits,
+    fetch_commit_files,
     compare_releases,
     compare_rhcos_rpms,
     get_component_rpms,
 ]
 
-MODEL_NAME = os.getenv(
-    "MODEL_NAME",
-    "gemini-2.5-flash",
-)
-
-
-SKILLS_DIR = os.getenv("SKILLS_DIR", "skills")
 
 # Gemini requires an assistant tool-call turn to follow a *user* turn (or a tool
 # result). We only persist AIMessage/ToolMessage in state, so follow-up turns
 # must replay the same opening user message before history.
-_USER_TASK = (
-    "Diagnose this OpenShift prow job"
-)
+ANALYSIS_SYSTEM_PROMPT = """
+    "Diagnose this OpenShift prow job. Use the procedures outlined in the system prompt to diagnose the job."
+"""
 
 def create_agent() -> StateGraph:
     """Create the LangGraph diagnosis agent."""
-
-    logger.info(f"Using model: {MODEL_NAME}")
-    llm_base = ChatGoogleGenerativeAI(model=MODEL_NAME, temperature=0)
+    cfg = get_config()
+    logger.info("Using model: %s", cfg.model_name)
+    llm_base = ChatGoogleGenerativeAI(
+        model=cfg.model_name,
+        temperature=cfg.model_temperature,
+        google_api_key=cfg.google_api_key or None,
+    )
     llm_analysis_force_tools = llm_base.bind_tools(TOOLS, tool_choice="any")
     llm_analysis_auto = llm_base.bind_tools(TOOLS)
 
     async def classify_failed_test(state: AgentState) -> dict:
         """Get the type of the failed test from the state."""
         with open(f"{SKILLS_DIR}/test-classifier.md", "r") as f:
-            system_prompt = f.read()    
+            system_prompt = f.read()
         system_prompt = system_prompt.format(**state,
-            artifacts_base=os.getenv("PROW_ARTIFACTS_URL", "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com"),
+            artifacts_base=cfg.prow_artifacts_url,
         )
         messages = [
             SystemMessage(content=system_prompt),
             HumanMessage(content="You're a test classifier. You need to classify the type of test that failed."),
         ]
         messages.extend(state.get("messages", []))
-        llm = llm_base.bind_tools(TOOLS)
+        llm = llm_base.bind_tools([fetch_artifact])
         response = llm.invoke(messages)
         out: dict = {"messages": [response]}
         if isinstance(response, AIMessage) and getattr(response, "tool_calls", None):
@@ -99,15 +126,15 @@ def create_agent() -> StateGraph:
 
     async def run_analysis(state: AgentState) -> dict:
         failed_test_type = state.get("failed_test_type")
-        prompt_file = f"{failed_test_type}-analysis.md" if failed_test_type else "generic-test-analysis.md"
+        prompt_file = f"{failed_test_type}-analysis.md"
         node_name = f"{failed_test_type}_analysis" if failed_test_type else "generic_analysis"
         logger.info(f"Running analysis: {prompt_file}")
         with open(f"{SKILLS_DIR}/{prompt_file}", "r") as f:
             system_prompt = f.read()
         prompt = system_prompt.format(**state,
-            artifacts_base=os.getenv("PROW_ARTIFACTS_URL", "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com"),
+            artifacts_base=cfg.prow_artifacts_url,
         )
-        messages = [SystemMessage(content=prompt), HumanMessage(content=_USER_TASK)]
+        messages = [SystemMessage(content=prompt), HumanMessage(content=ANALYSIS_SYSTEM_PROMPT)]
         prior = state.get("messages") or []
         if prior:
             messages.extend(prior)
@@ -131,17 +158,25 @@ def create_agent() -> StateGraph:
             "input_tokens": state.get("input_tokens", 0) + d_in,
             "output_tokens": state.get("output_tokens", 0) + d_out,
         }
-        content = response.content if isinstance(response.content, str) else str(response.content)
-        if "Regressing version:" in content and "Previous version:" in content:
-            out["regressing_version"] = content.split("Regressing version: ")[1].split("\n")[0]
-            out["previous_version"] = content.split("Previous version: ")[1].split("\n")[0]
-            logger.info("Versions: %s → %s", out["previous_version"], out["regressing_version"])
-        if "ocp_version:" in content.lower():
-            for line in content.splitlines():
-                if line.lower().startswith("ocp_version:"):
-                    out["ocp_version"] = line.split(":", 1)[1].strip().strip("`")
-                    logger.info("OCP version: %s", out["ocp_version"])
-                    break
+        content = _text_from_response_content(response.content)
+        regressing = _extract_labeled_value(content, "Regressing version")
+        previous = _extract_labeled_value(content, "Previous version")
+        if regressing:
+            out["regressing_version"] = regressing
+        if previous:
+            out["previous_version"] = previous
+        if regressing and previous:
+            logger.info("Versions: %s → %s", previous, regressing)
+        regressing_uuid = _extract_labeled_value(content, "Regressing UUID")
+        previous_uuid = _extract_labeled_value(content, "Previous UUID")
+        if regressing_uuid:
+            out["regressing_uuid"] = regressing_uuid
+        if previous_uuid:
+            out["previous_uuid"] = previous_uuid
+        ocp_version = _extract_labeled_value(content, "ocp_version")
+        if ocp_version:
+            out["ocp_version"] = ocp_version
+            logger.info("OCP version: %s", ocp_version)
         return out
 
     def tools_required(state: AgentState) -> str:

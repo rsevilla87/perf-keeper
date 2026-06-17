@@ -26,6 +26,8 @@ The agent is built on [LangGraph](https://github.com/langchain-ai/langgraph) and
 |------|-------------|
 | `fetch_artifact` | Fetch text from any HTTP URL (CI logs, JSON reports, etc.) |
 | `fetch_github_pull_request` | Get PR metadata (title, body, labels, state) via GitHub REST API |
+| `fetch_pr_commits` | Get list of commits in a GitHub PR |
+| `fetch_commit_files` | Get files changed in a specific commit |
 | `compare_releases` | Compare two OCP payloads via Sippy to identify PR changes |
 | `compare_rhcos_rpms` | Compare RHCOS RPM differences between versions |
 | `get_component_rpms` | Retrieve component-specific RPM information |
@@ -58,40 +60,47 @@ pip install -e ".[dev]"
 
 ## Configuration
 
-Create a `.env` file in the project root with the following variables:
+Create a `config.yaml` file in the project root by copying the example template:
 
 ```bash
-# Required
-GITHUB_TOKEN=<your-github-personal-access-token>   # Needs read access to repos
-GOOGLE_API_KEY=<your-google-gemini-api-key>
-
-# Optional - LLM configuration
-MODEL_NAME=gemini-2.5-flash          # Gemini model to use (default: gemini-2.5-pro)
-LLM_TEMPERATURE=0                    # 0 for deterministic outputs
-MAX_OUTPUT_TOKENS=1024               # Max tokens for the final report
-
-# Optional - Prow infrastructure URLs (defaults shown)
-PROW_ARTIFACTS_URL=https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com
-PROW_DOMAIN=https://prow.ci.openshift.org
+cp config.yaml.example config.yaml
 ```
 
-You can copy the template and fill in your values:
+Then edit `config.yaml` and add your API credentials:
 
-```bash
-cat > .env << 'EOF'
-GITHUB_TOKEN=
-GOOGLE_API_KEY=
-MODEL_NAME=gemini-2.5-flash
-LLM_TEMPERATURE=0
-MAX_OUTPUT_TOKENS=1024
-PROW_ARTIFACTS_URL=https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com
-PROW_DOMAIN=https://prow.ci.openshift.org
-EOF
+```yaml
+# Required secrets
+github_token: YOUR_GITHUB_TOKEN_HERE    # GitHub personal access token with repo read access
+google_api_key: YOUR_GOOGLE_API_KEY_HERE # Google Gemini API key
+
+# LLM Configuration (optional - defaults shown)
+model_name: gemini-2.5-flash
+model_temperature: 0.0
+
+# Logging
+log_level: INFO
+
+# URLs (optional - defaults for OpenShift CI)
+prow_artifacts_url: https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com
+prow_domain: https://prow.ci.openshift.org
+github_api_url: https://api.github.com
+sippy_base_url: https://sippy.dptools.openshift.org/api
+ocp_release_api_url: https://amd64.ocp.releases.ci.openshift.org/api/v1
+
+# Watch mode (optional - for periodic job monitoring)
+job_names:
+  - "periodic-ci-openshift-eng-ocp-qe-perfscale-ci-main-aws-4.22*"
+poll_interval: 15  # minutes
+output_dir: ./reports
 ```
 
-## CLI mode
+> **Important**: The `config.yaml` file contains secrets and is excluded from version control via `.gitignore`. Never commit this file.
 
-The agent can be run in CLI mode to diagnose a failed Prow job.
+## Usage
+
+### CLI mode (single job analysis)
+
+Diagnose a specific failed Prow job:
 
 ```bash
 # Diagnose a failed Prow job
@@ -99,29 +108,67 @@ perf-keeper --prow-job-url "https://prow.ci.openshift.org/view/gs/test-platform-
 
 # Show LLM token usage after the run
 perf-keeper --prow-job-url "https://prow.ci.openshift.org/view/gs/..." --print-token-usage
+
+# Use a custom config file
+perf-keeper --config /path/to/config.yaml --prow-job-url "https://..."
 ```
 
 If the job passed, the agent exits early with a success message. Otherwise, it prints the final RCA report to stdout.
 
-> **Note**: Supported flags can be seen with `perf-keeper --help`.
 
+### Watch mode (daemon for periodic monitoring)
 
-## Server mode
+Monitor Prow jobs continuously and automatically analyze failures:
 
-The agent can be run in server mode to diagnose a failed Prow job via a REST API.
+```bash
+# Start the watcher daemon
+perf-keeper --watch
+
+# Analyze jobs completed after a specific date
+perf-keeper --watch --since 2026-06-01
+
+# Use a custom config file
+perf-keeper --config /path/to/config.yaml --watch
+```
+
+Watch mode requires configuring `job_names` in `config.yaml` with job name patterns to monitor:
+
+```yaml
+job_names:
+  - "periodic-ci-openshift-eng-ocp-qe-perfscale-ci-main-aws-4.22*"
+  - "periodic-ci-openshift-eng-ocp-qe-perfscale-ci-main-gcp-*"
+poll_interval: 15  # Poll every 15 minutes
+output_dir: ./reports  # Where to save analysis reports
+```
+
+The watcher will:
+- Poll Prow at the configured interval for jobs matching the patterns
+- Automatically analyze any new failures
+- Save structured Markdown reports to `output_dir`
+- Track analyzed jobs in `analyzed_jobs.json` to avoid re-analyzing
+- Gracefully handle `SIGINT` and `SIGTERM` for clean shutdown
+
+### Server mode (REST API)
+
+Run as a REST API server:
 
 ```bash
 # Start the server
 perf-keeper --server --port 8080
+
+# With a custom config file
+perf-keeper --config /path/to/config.yaml --server --port 8080
 ```
 
-The server will listen on port 8080 and will diagnose the failed Prow job when a POST request is made to the `/analyze` endpoint.
+The server exposes a `/analyze` endpoint:
 
 ```bash
-curl -X POST "http://localhost:8080/analyze" -H "Content-Type: application/json" -d '{"job_url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/<job-name>/<build-id>/"}'
+curl -X POST "http://localhost:8080/analyze" \
+  -H "Content-Type: application/json" \
+  -d '{"job_url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/<job-name>/<build-id>/"}'
 ```
 
-The server will return a JSON response with the analysis result.
+Response:
 
 ```json
 {

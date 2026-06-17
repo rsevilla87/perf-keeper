@@ -1,0 +1,31 @@
+# perf-keeper configuration example
+# Copy this file to config.yaml and fill in your secrets
+
+# Secrets (Required)
+github_token: YOUR_GITHUB_TOKEN_HERE
+google_api_key: YOUR_GOOGLE_API_KEY_HERE
+
+# LLM Configuration
+model_name: gemini-2.5-flash
+model_temperature: 0.0
+
+# Logging
+log_level: INFO
+
+# URLs (defaults shown - change if using a different infrastructure)
+prow_artifacts_url: https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com
+prow_domain: https://prow.ci.openshift.org
+github_api_url: https://api.github.com
+sippy_base_url: https://sippy.dptools.openshift.org/api
+ocp_release_api_url: https://amd64.ocp.releases.ci.openshift.org/api/v1
+
+# Watch mode (for periodic job monitoring)
+job_names:
+  - "periodic-ci-openshift-eng-ocp-qe-perfscale-ci-main-aws-4.22*"
+poll_interval: 15  # minutes
+output_dir: ./reports
+
+# Elasticsearch (optional - for advanced metrics analysis)
+# es_server: https://your-es-server.com
+# es_index: ripsaw-kube-burner-*
+# es_verify: false

@@ -1,13 +1,11 @@
 from __future__ import annotations
 import logging
 import re
-import os
 from langchain_core.messages import SystemMessage
 from langgraph.graph import END
+from perf_keeper.config import get_config
 from perf_keeper.state import AgentState
 import httpx
-
-PROW_ARTIFACTS_URL = os.getenv("PROW_ARTIFACTS_URL", "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com")
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +47,7 @@ def extract_job_info(state: AgentState) -> dict:
 def get_job_state(job_name: str, build_id: str) -> bool:
     """Check if a job is failed by checking the finished.json file"""
     try:
-        url = f"{PROW_ARTIFACTS_URL}/gcs/test-platform-results/logs/{job_name}/{build_id}/finished.json"
+        url = f"{get_config().prow_artifacts_url}/gcs/test-platform-results/logs/{job_name}/{build_id}/finished.json"
         resp = httpx.get(url)
         resp.raise_for_status()
         json_data = resp.json()
@@ -72,7 +70,8 @@ def passed_condition(state: AgentState) -> str:
 def get_failed_test_info(state: AgentState) -> dict:
     job_name = state["job_name"]
     build_id = state["build_id"]
-    url = f"{PROW_ARTIFACTS_URL}/gcs/test-platform-results/logs/{job_name}/{build_id}/artifacts/ci-operator.log"
+    url = f"{get_config().prow_artifacts_url}/gcs/test-platform-results/logs/{job_name}/{build_id}/artifacts/ci-operator.log"
+    logger.info(f"get_failed_test_info: Extracting failed test/step info from: {url}")
     resp = httpx.get(url)
     # Look for the line containing
     # {"level":"error","msg":"\n  * could not run steps: step {step} failed: \"{step}\" test steps failed: \"{step}\" pod \"{step}-{test}\" failed: could not watch pod
@@ -88,7 +87,6 @@ def get_failed_test_info(state: AgentState) -> dict:
                 "failed_test": test_name,
             }   
     return {
-        "messages": [
-            SystemMessage(content=f"No failed test found in ci-operator.log"),
-        ]
+        "failed_step": None,
+        "failed_test": None,
     }

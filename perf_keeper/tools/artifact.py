@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import httpx
 from langchain_core.tools import tool
+import logging
+
+logger = logging.getLogger(__name__)
 
 @tool
 def fetch_artifact(url: str) -> str:
@@ -12,6 +15,7 @@ def fetch_artifact(url: str) -> str:
         url: Absolute URL to GET.
     """
     try:
+        logger.info(f"Fetching artifact from: {url}")
         resp = httpx.get(url, follow_redirects=True)
         resp.raise_for_status()
         return resp.text

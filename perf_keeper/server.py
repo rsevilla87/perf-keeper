@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
-from dotenv import load_dotenv
 from fastapi import FastAPI
 from pydantic import BaseModel, HttpUrl
 
@@ -18,7 +17,6 @@ _agent = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _agent
-    load_dotenv()
     _agent = create_agent()
     yield
 
