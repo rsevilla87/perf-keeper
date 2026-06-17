@@ -25,6 +25,7 @@ from perf_keeper.tools.openshift_release import (
 )
 from perf_keeper.prow_utils import extract_job_info, passed_condition, get_failed_test_info
 from perf_keeper.state import AgentState
+from perf_keeper.tools.workload_metadata import fetch_kube_burner_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,7 @@ TOOLS = [
     compare_releases,
     compare_rhcos_rpms,
     get_component_rpms,
+    fetch_kube_burner_metadata,
 ]
 
 

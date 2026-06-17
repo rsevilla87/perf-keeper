@@ -17,20 +17,22 @@ The agent is built on [LangGraph](https://github.com/langchain-ai/langgraph) and
 
 ### Analysis types
 
-- **Orion analysis**: For performance regression tests (`openshift-qe-orion*`). Analyzes regression metrics, compares OCP release payloads via Sippy, fetches RHCOS RPM diffs, and identifies suspect PRs.
+- **Orion analysis**: For performance regression tests (`openshift-qe-orion`*). Analyzes regression metrics, compares OCP release payloads via Sippy, fetches RHCOS RPM diffs, and identifies suspect PRs.
 - **Generic analysis**: For other test failures. Categorizes failures (infrastructure, installation, test execution, day-2 ops), analyzes benchmarks, and cross-references system health.
 
 ### Tools available to the agent
 
-| Tool | Description |
-|------|-------------|
-| `fetch_artifact` | Fetch text from any HTTP URL (CI logs, JSON reports, etc.) |
+
+| Tool                        | Description                                                      |
+| --------------------------- | ---------------------------------------------------------------- |
+| `fetch_artifact`            | Fetch text from any HTTP URL (CI logs, JSON reports, etc.)       |
 | `fetch_github_pull_request` | Get PR metadata (title, body, labels, state) via GitHub REST API |
-| `fetch_pr_commits` | Get list of commits in a GitHub PR |
-| `fetch_commit_files` | Get files changed in a specific commit |
-| `compare_releases` | Compare two OCP payloads via Sippy to identify PR changes |
-| `compare_rhcos_rpms` | Compare RHCOS RPM differences between versions |
-| `get_component_rpms` | Retrieve component-specific RPM information |
+| `fetch_pr_commits`          | Get list of commits in a GitHub PR                               |
+| `fetch_commit_files`        | Get files changed in a specific commit                           |
+| `compare_releases`          | Compare two OCP payloads via Sippy to identify PR changes        |
+| `compare_rhcos_rpms`        | Compare RHCOS RPM differences between versions                   |
+| `get_component_rpms`        | Retrieve component-specific RPM information                      |
+
 
 ## Prerequisites
 
@@ -94,27 +96,7 @@ poll_interval: 15  # minutes
 output_dir: ./reports
 ```
 
-> **Important**: The `config.yaml` file contains secrets and is excluded from version control via `.gitignore`. Never commit this file.
-
-## Usage
-
-### CLI mode (single job analysis)
-
-Diagnose a specific failed Prow job:
-
-```bash
-# Diagnose a failed Prow job
-perf-keeper --prow-job-url "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/<job-name>/<build-id>/"
-
-# Show LLM token usage after the run
-perf-keeper --prow-job-url "https://prow.ci.openshift.org/view/gs/..." --print-token-usage
-
-# Use a custom config file
-perf-keeper --config /path/to/config.yaml --prow-job-url "https://..."
-```
-
-If the job passed, the agent exits early with a success message. Otherwise, it prints the final RCA report to stdout.
-
+> ⚠️ **Important**: Beware of committing your `config.yaml` file to the repository. It contains secrets and is excluded from version control via `.gitignore`. Never commit this file.
 
 ### Watch mode (daemon for periodic monitoring)
 
@@ -142,6 +124,7 @@ output_dir: ./reports  # Where to save analysis reports
 ```
 
 The watcher will:
+
 - Poll Prow at the configured interval for jobs matching the patterns
 - Automatically analyze any new failures
 - Save structured Markdown reports to `output_dir`
@@ -173,5 +156,8 @@ Response:
 ```json
 {
     "passed": false,
-    "analysis": "The job failed because of the following reason..."
+    "analysis": "The job failed because of the following reason...",
+    "analysis_duration_seconds": 30
 }
+```
+

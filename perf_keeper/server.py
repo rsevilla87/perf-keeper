@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
-
+import time
 from fastapi import FastAPI
 from pydantic import BaseModel, HttpUrl
 
@@ -31,14 +31,17 @@ class AgentData(BaseModel):
 class AgentResponse(BaseModel):
     passed: bool
     analysis: str
+    analysis_duration_seconds: int
 
 
 @app.post("/analyze", response_model=AgentResponse)
 async def analyze(req: AgentData):
     logger.info("Received analysis request for %s", req.job_url)
+    start_time = time.time()
     state = await _agent.ainvoke({"job_url": str(req.job_url)})
     passed = state["passed"]
+    elapsed_time = time.time() - start_time
     if passed:
-        return AgentResponse(passed=True, analysis="Job passed. No diagnosis required.")
+        return AgentResponse(passed=True, analysis="Job passed. No diagnosis required.", analysis_duration_seconds=elapsed_time)
     final = (state.get("final_report") or "").strip()
-    return AgentResponse(passed=False, analysis=final)
+    return AgentResponse(passed=False, analysis=final, analysis_duration_seconds=int(elapsed_time))

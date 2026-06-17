@@ -28,8 +28,6 @@ You may use **only** the tools listed below.
 
 7. **`get_component_rpms(payload, component)`** — Get the list of RPMs included in a component of a release payload (e.g. ovn-kubernetes, etcd).
 
-8. **`fetch_kube_burner_metadata(uuid)`** — Fetch kube-burner `jobSummary` from Elasticsearch by **workload UUID** (server/index are configured automatically). The document is indexed by kube-burner at the end of each benchmark run and is looked up by `uuid`. Returns kube-burner version, `workloadFlags` and execution errors if any.
-
 The artifacts base URL is:
 
 `{artifacts_base}/gcs/test-platform-results/logs/{job_name}/{build_id}/`
@@ -94,24 +92,33 @@ Follow these steps in order. Do not skip steps. Think carefully between each ste
 
 Fetch the Orion report or build log of the failed test (see **Orion test types** above) and extract `regressing_version`, `previous_version`, and the `Build` URL for each failing benchmark.
 
-### Step 2: Triage downstream merge PRs
+### Step 2: Compare versions differences
 
-If a suspect PR is composed by a large number of commits or the title contains keywords such as "Sync", "Merge", "Branch", or "Backport" (indicating a downstream cherry-pick bundle rather than a single upstream change), do **not** try to read the PR body for the root cause. Instead:
+Compare the versions differences between the current and previous payload using **`compare_releases`**. Examine each PR using **`fetch_github_pull_request(pr_url)`** to get the title and description
+
+If the diff contains any relevant PR, proceed to the next step.
+
+### Step 2B: Triage the suspect PRs if any
+
+If from the previous step you found a suspect PR that is composed by a large number of commits or the title contains keywords such as "Sync", "Merge", "Branch", or "Backport" (indicating a downstream cherry-pick bundle rather than a single upstream change), do **not** try to read the PR body for the root cause. Instead, use the following steps to identify the likely culprit commits:
 
 1. Call **`fetch_pr_commits(pr_url)`** to retrieve the full commit list for the PR. Each entry includes a short SHA, date, author, one-line message, and a commit URL.
+
 2. From the commit messages, identify up to **3 candidate commits** whose messages relate to the regressing metric or component (e.g. for `ovnCPU` / `ovnMem` regressions, look for keywords such as `ovn`, `nbdb`, `controller`, `memory`, `cpu`, `leak`, `performance`).
+
 3. For each candidate, call **`fetch_commit_files(commit_url)`** to retrieve only the filenames changed — no diff text. Confirm that the changed paths are in files relevant to the regressing component.
+
 4. Report the specific commit SHA(s) and their messages as the likely culprit(s), along with the relevant changed files.
 
-### Step 3: Compare the RHCOS versions
+### Step 4: Compare the RHCOS versions
 
 If the diff doesn't contain any relevant PR, compare the RHCOS RPM differences between the RHCOS (Red Hat Core OS) versions of the current and previous payload using **`compare_rhcos_rpms`**.
 
-### Step 4: Compare the RPM differences
+### Step 5: Compare the RPM differences
 
 And last resort, compare the RPM differences in the CNI component `ovn-kubernetes`, focusing in the `ovn` packages using **`get_component_rpms`**.
 
-### Step 5: Return the regressing version and the previous version
+### Step 6: Return the regressing version and the previous version
 
 Return the regressing version and the previous version in the following format:
 
