@@ -42,6 +42,6 @@ async def analyze(req: AgentData):
     passed = state["passed"]
     elapsed_time = time.time() - start_time
     if passed:
-        return AgentResponse(passed=True, analysis="Job passed. No diagnosis required.", analysis_duration_seconds=elapsed_time)
+        return AgentResponse(passed=True, analysis="Job passed. No diagnosis required.", analysis_duration_seconds=int(elapsed_time))
     final = (state.get("final_report") or "").strip()
     return AgentResponse(passed=False, analysis=final, analysis_duration_seconds=int(elapsed_time))
