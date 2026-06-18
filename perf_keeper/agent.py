@@ -164,8 +164,7 @@ def create_agent() -> StateGraph:
         regressing = _extract_labeled_value(content, "Regressing version")
         previous = _extract_labeled_value(content, "Previous version")
         failed_workload = _extract_labeled_value(content, "Failed workload")
-        if failed_workload:
-            out["failed_workload"] = failed_workload
+        out["failed_workload"] = failed_workload or ""
         if regressing:
             out["regressing_version"] = regressing
         if previous:

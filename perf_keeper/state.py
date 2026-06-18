@@ -11,7 +11,7 @@ class AgentState(TypedDict):
     build_id: str
     failed_step: str
     failed_test: str
-    failed_workload: str
+    failed_workload: NotRequired[str]
     job_result: str
     job_analysis: str
     version_diffs: str

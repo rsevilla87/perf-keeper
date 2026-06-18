@@ -11,7 +11,7 @@ For each changepoint, produce a report with the exact structure below. Use Markd
 
 ## Required output structure
 
-Omit the sections that dont' contain any information.
+Omit the sections that don't contain any information.
 
 # Analysis for `metric_name`
 
