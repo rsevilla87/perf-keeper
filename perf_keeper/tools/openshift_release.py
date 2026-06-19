@@ -48,13 +48,13 @@ def _fetch_rhcos_rpms(stream: str, version: str) -> list[dict]:
     commitmeta = _get_json(commitmeta_url)
     pkglist = commitmeta.get("rpmostree.rpmdb.pkglist", [])
     return [
-        {"name": pkg[0], "epoch": pkg[1], "version": pkg[2], "release": pkg[3], "arch": pkg[4]}
+        {"name": pkg[0], "version": pkg[2], "release": pkg[3], "arch": pkg[4]}
         for pkg in pkglist
     ]
 
 
 def _format_rpm(rpm: dict) -> str:
-    return f"{rpm['name']}-{rpm['version']}-{rpm['release']} (epoch={rpm['epoch']}, arch={rpm['arch']})"
+    return f"{rpm['name']}-{rpm['version']}-{rpm['release']} (arch={rpm['arch']})"
 
 
 @tool
@@ -114,7 +114,7 @@ def _diff_rpm_lists(rpms_new: list[dict], rpms_old: list[dict]) -> str:
             added.append(rpm)
         else:
             old = old_by_name[name]
-            if rpm["version"] != old["version"] or rpm["release"] != old["release"] or rpm["epoch"] != old["epoch"]:
+            if rpm["version"] != old["version"] or rpm["release"] != old["release"]:
                 updated.append({"name": name, "old": old, "new": rpm})
     for name, rpm in old_by_name.items():
         if name not in new_by_name:
@@ -183,14 +183,14 @@ def _list_component_rpms(payload: str, component: str) -> list[dict]:
     result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=120)
     image_ref = result.stdout.strip()
     cmd = ["podman", "run", "--rm", "--entrypoint", "rpm", image_ref,
-           "-qa", "--queryformat", "%{NAME} %{EPOCH} %{VERSION} %{RELEASE} %{ARCH}\n"]
+           "-qa", "--queryformat", "%{NAME} %{VERSION} %{RELEASE} %{ARCH}\n"]
     logger.info("Running: %s", " ".join(cmd))
     result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=300)
     rpms: list[dict] = []
     for line in result.stdout.splitlines():
-        parts = line.split(None, 4)
-        if len(parts) == 5:
-            rpms.append({"name": parts[0], "epoch": parts[1], "version": parts[2], "release": parts[3], "arch": parts[4]})
+        parts = line.split(None, 3)
+        if len(parts) == 4:
+            rpms.append({"name": parts[0], "version": parts[1], "release": parts[2], "arch": parts[3]})
     return rpms
 
 
@@ -208,8 +208,8 @@ def get_component_rpms(payload: str, component: str) -> str:
         rpms = _list_component_rpms(payload, component)
         if rpms:
             return "\n".join(_format_rpm(r) for r in rpms)
-        logger.warning("No RPMs found in component image.")
+        return f"No RPMs found in component image for {component} in {payload}."
     except subprocess.CalledProcessError as e:
-        logger.error(f"Error getting component RPMs: {e.stderr or e}")
+        return f"Error getting component RPMs: {e.stderr or e}"
     except Exception as e:
-        logger.error(f"Error getting component RPMs: {e}")
+        return f"Error getting component RPMs: {e}"
