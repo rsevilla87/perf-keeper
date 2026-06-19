@@ -93,11 +93,12 @@ ANALYSIS_SYSTEM_PROMPT = """
 def create_agent() -> StateGraph:
     """Create the LangGraph diagnosis agent."""
     cfg = get_config()
-    logger.info("Using model: %s", cfg.model_name)
+    logger.info("Using model: %s with temperature: %s", cfg.model_name, cfg.model_temperature)
     llm_base = ChatGoogleGenerativeAI(
         model=cfg.model_name,
         temperature=cfg.model_temperature,
         google_api_key=cfg.google_api_key or None,
+        model_kwargs={"seed": 42},  # Add seed for deterministic outputs (requires Gemini API support)
     )
     llm_analysis_force_tools = llm_base.bind_tools(TOOLS, tool_choice="any")
     llm_analysis_auto = llm_base.bind_tools(TOOLS)
