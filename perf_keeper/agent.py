@@ -98,7 +98,7 @@ def create_agent() -> StateGraph:
         model=cfg.model_name,
         temperature=cfg.model_temperature,
         google_api_key=cfg.google_api_key or None,
-        model_kwargs={"seed": 42},  # Add seed for deterministic outputs (requires Gemini API support)
+        seed=42,
     )
     llm_analysis_force_tools = llm_base.bind_tools(TOOLS, tool_choice="any")
     llm_analysis_auto = llm_base.bind_tools(TOOLS)
